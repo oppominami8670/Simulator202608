@@ -16,7 +16,6 @@ async function fetchText(url) {
 const oldHtml = await fetchText(oldUrl);
 const newHtml = fs.readFileSync(newPath, 'utf8');
 
-// Avoid fragile regular-expression parsing for <script> blocks.
 function extractScripts(html) {
   const scripts = [];
   const open = /<script(?:[^>]*)>/gi;
@@ -48,21 +47,13 @@ const oldScriptCount = assertSyntax(oldHtml, 'old');
 const newScriptCount = assertSyntax(newHtml, 'new');
 
 const browser = await chromium.launch({ headless: true });
-const report = {
-  syntax: { old: 'PASS', new: 'PASS', oldScriptCount, newScriptCount },
-  cases: [],
-  summary: {}
-};
+const report = { syntax: { old: 'PASS', new: 'PASS', oldScriptCount, newScriptCount }, cases: [], summary: {} };
 
 async function load(page, url) {
   await page.route('https://script.google.com/**', async route => {
     try {
       const r = await fetch(route.request().url(), { redirect: 'follow' });
-      await route.fulfill({
-        status: r.status,
-        headers: { 'content-type': r.headers.get('content-type') || 'application/json' },
-        body: await r.text()
-      });
+      await route.fulfill({ status: r.status, headers: { 'content-type': r.headers.get('content-type') || 'application/json' }, body: await r.text() });
     } catch (e) {
       await route.abort();
     }
@@ -80,56 +71,30 @@ const newState = await newPage.evaluate(() => {
   const r = typeof calc === 'function' ? calc() : null;
   return r && typeof r.first === 'number' && typeof r.later === 'number' ? r : null;
 });
-report.newEngine = newState
-  ? { status: 'PASS', first: newState.first, later: newState.later }
-  : { status: 'FAIL' };
-
+report.newEngine = newState ? { status: 'PASS', first: newState.first, later: newState.later } : { status: 'FAIL' };
 const oldCalc = await oldPage.evaluate(() => typeof calc === 'function');
 report.oldEngine = { status: oldCalc ? 'PASS' : 'FAIL' };
 
-// 100 deterministic randomized UI states for the new engine smoke/regression harness.
-const rng = (() => {
-  let x = 0x9e3779b9;
-  return () => ((x = Math.imul(x ^ x >>> 16, 2246822507) ^ Math.imul(x ^ x >>> 13, 3266489909)) >>> 0) / 4294967296;
-})();
-
+const rng = (() => { let x = 0x9e3779b9; return () => ((x = Math.imul(x ^ x >>> 16, 2246822507) ^ Math.imul(x ^ x >>> 13, 3266489909)) >>> 0) / 4294967296; })();
 for (let i = 0; i < 100; i++) {
   const result = await newPage.evaluate((seed) => {
-    const pick = s => {
-      if (!s || !s.options.length) return;
-      const enabled = [...s.options].filter(o => !o.disabled);
-      if (enabled.length) s.value = enabled[Math.floor(seed * enabled.length)].value;
-      s.dispatchEvent(new Event('change', { bubbles: true }));
-    };
-    const sels = ['carrier', 'category', 'device', 'ins', 'con', 'plan', 'data', 'net', 'netType']
-      .map(id => document.getElementById(id)).filter(Boolean);
+    const pick = s => { if (!s || !s.options.length) return; const enabled = [...s.options].filter(o => !o.disabled); if (enabled.length) s.value = enabled[Math.floor(seed * enabled.length)].value; s.dispatchEvent(new Event('change', { bubbles: true })); };
+    const sels = ['carrier', 'category', 'device', 'ins', 'con', 'plan', 'data', 'net', 'netType'].map(id => document.getElementById(id)).filter(Boolean);
     for (const s of sels) pick(s);
     const d = document.getElementById('devDisc');
-    if (d) {
-      d.value = String(Math.floor(seed * 6) * 5000);
-      d.dispatchEvent(new Event('input', { bubbles: true }));
-    }
+    if (d) { d.value = String(Math.floor(seed * 6) * 5000); d.dispatchEvent(new Event('input', { bubbles: true })); }
     const r = typeof calc === 'function' ? calc() : null;
     return r && Number.isFinite(r.first) && Number.isFinite(r.later) ? r : null;
   }, rng());
-  report.cases.push({
-    case: i + 1,
-    new: result ? { status: 'PASS', first: result.first, later: result.later } : { status: 'FAIL' }
-  });
+  report.cases.push({ case: i + 1, new: result ? { status: 'PASS', first: result.first, later: result.later } : { status: 'FAIL' } });
 }
 
 report.summary = {
-  syntax: 'PASS',
-  generatedCases: report.cases.length,
-  newEngineCallable: report.newEngine.status === 'PASS',
-  oldEngineCallable: report.oldEngine.status === 'PASS',
+  syntax: 'PASS', generatedCases: report.cases.length,
+  newEngineCallable: report.newEngine.status === 'PASS', oldEngineCallable: report.oldEngine.status === 'PASS',
   numericalParity: 'NOT_EXECUTED: old/new DOM schemas expose different result interfaces; no false PASS is reported'
 };
-
 fs.writeFileSync('regression-report.json', JSON.stringify(report, null, 2));
 await browser.close();
-
-if (report.newEngine.status !== 'PASS' || report.oldEngine.status !== 'PASS' || report.cases.some(c => c.new.status !== 'PASS')) {
-  process.exit(1);
-}
+if (report.newEngine.status !== 'PASS' || report.oldEngine.status !== 'PASS' || report.cases.some(c => c.new.status !== 'PASS')) process.exit(1);
 console.log(JSON.stringify(report.summary, null, 2));
