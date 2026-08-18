@@ -10,7 +10,7 @@ const oldHtml = await (await fetch(oldUrl)).text();
 const newHtml = fs.readFileSync(newPath, 'utf8');
 
 function assertSyntax(html, name) {
-  const scripts = [...html.matchAll(/<script(?:[^>]*)>([\\s\\S]*?)<\\/script>/gi)].map(m => m[1]).filter(Boolean);
+  const scripts = [...html.matchAll(/<script(?:[^>]*)>([\s\S]*?)<\/script>/gi)].map(m => m[1]).filter(Boolean);
   for (let i = 0; i < scripts.length; i++) {
     try { new Function(scripts[i]); }
     catch (e) { throw new Error(`${name}: script ${i + 1} syntax error: ${e.message}`); }
@@ -23,7 +23,7 @@ const browser = await chromium.launch({ headless: true });
 const report = { syntax: { old: 'PASS', new: 'PASS' }, cases: [], summary: {} };
 
 async function load(page, html, label) {
-  const urls = [...html.matchAll(/https:\\/\\/script\.google\.com\\/macros\\/s\\/[^"'\\s]+/g)].map(m => m[0]);
+  const urls = [...html.matchAll(/https:\/\/script\.google\.com\/macros\/s\/[^"'\s]+/g)].map(m => m[0]);
   await page.route('https://script.google.com/**', async route => {
     try {
       const r = await fetch(route.request().url(), { redirect: 'follow' });
