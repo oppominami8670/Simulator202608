@@ -16,40 +16,17 @@ async function fetchText(url) {
 const oldHtml = await fetchText(oldUrl);
 const newHtml = fs.readFileSync(newPath, 'utf8');
 
-function extractScripts(html) {
-  const scripts = [];
-  const open = /<script(?:[^>]*)>/gi;
-  let match;
-  while ((match = open.exec(html)) !== null) {
-    const start = match.index + match[0].length;
-    const end = html.toLowerCase().indexOf('</script>', start);
-    if (end < 0) throw new Error('Unclosed <script> tag');
-    const source = html.slice(start, end);
-    if (source.trim()) scripts.push(source);
-    open.lastIndex = end + '</script>'.length;
-  }
-  return scripts;
+function countScripts(html) {
+  return (html.match(/<script(?:[^>]*)>/gi) || []).length;
 }
-
-function assertSyntax(html, name) {
-  const scripts = extractScripts(html);
-  for (let i = 0; i < scripts.length; i++) {
-    try {
-      new Function(scripts[i]);
-    } catch (e) {
-      throw new Error(`${name}: script ${i + 1} syntax error: ${e.message}`);
-    }
-  }
-  return scripts.length;
-}
-
-const oldScriptCount = assertSyntax(oldHtml, 'old');
-const newScriptCount = assertSyntax(newHtml, 'new');
 
 const browser = await chromium.launch({ headless: true });
-const report = { syntax: { old: 'PASS', new: 'PASS', oldScriptCount, newScriptCount }, cases: [], summary: {} };
+const report = { syntax: {}, cases: [], summary: {} };
 
-async function load(page, url) {
+async function load(page, url, name) {
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
   await page.route('https://script.google.com/**', async route => {
     try {
       const r = await fetch(route.request().url(), { redirect: 'follow' });
@@ -60,12 +37,14 @@ async function load(page, url) {
   });
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1500);
+  report.syntax[name] = { status: errors.length ? 'FAIL' : 'PASS', scriptCount: name === 'old' ? countScripts(oldHtml) : countScripts(newHtml), errors };
+  return errors;
 }
 
 const oldPage = await browser.newPage();
 const newPage = await browser.newPage();
-await load(oldPage, oldUrl);
-await load(newPage, pathToFileURL(newPath).href);
+const oldErrors = await load(oldPage, oldUrl, 'old');
+const newErrors = await load(newPage, pathToFileURL(newPath).href, 'new');
 
 const newState = await newPage.evaluate(() => {
   const r = typeof calc === 'function' ? calc() : null;
@@ -90,11 +69,14 @@ for (let i = 0; i < 100; i++) {
 }
 
 report.summary = {
-  syntax: 'PASS', generatedCases: report.cases.length,
-  newEngineCallable: report.newEngine.status === 'PASS', oldEngineCallable: report.oldEngine.status === 'PASS',
-  numericalParity: 'NOT_EXECUTED: old/new DOM schemas expose different result interfaces; no false PASS is reported'
+  syntaxOld: report.syntax.old.status,
+  syntaxNew: report.syntax.new.status,
+  generatedCases: report.cases.length,
+  newEngineCallable: report.newEngine.status === 'PASS',
+  oldEngineCallable: report.oldEngine.status === 'PASS',
+  numericalParity: 'NOT_EXECUTED: old/new result interfaces are not yet wired for direct numerical comparison'
 };
 fs.writeFileSync('regression-report.json', JSON.stringify(report, null, 2));
 await browser.close();
-if (report.newEngine.status !== 'PASS' || report.oldEngine.status !== 'PASS' || report.cases.some(c => c.new.status !== 'PASS')) process.exit(1);
+if (oldErrors.length || newErrors.length || report.newEngine.status !== 'PASS' || report.oldEngine.status !== 'PASS' || report.cases.some(c => c.new.status !== 'PASS')) process.exit(1);
 console.log(JSON.stringify(report.summary, null, 2));
