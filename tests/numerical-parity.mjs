@@ -6,10 +6,10 @@ import { pathToFileURL } from 'node:url';
 const OLD = 'https://raw.githubusercontent.com/oppominami8670/Simulator202603/main/index.html';
 const NEW = pathToFileURL(path.join(process.cwd(), 'phase9.html')).href;
 const N = 100;
-const sleep = ms => new Promise(r => setTimeout(r, ms));
 const report = { cases: [], summary: {} };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function pageLoad(page, url, name) {
+async function load(page, url, name) {
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -35,24 +35,18 @@ async function legacyCase(page, seed) {
     const carrier = pick(card.querySelector('.carrier-sel'), seed);
     const cats = [...card.querySelectorAll('.cat-btns .btn')];
     const cat = cats[Math.min(cats.length - 1, Math.floor(seed * cats.length))];
-    cat.click();
-    await wait(30);
+    cat.click(); await wait(30);
     const category = cat.dataset.cat;
-    const device = pick(card.querySelector('.dev-name'), seed * 1.31 % 1);
-    await wait(30);
-    const ins = pick(card.querySelector('.ins-count'), seed * 1.71 % 1);
-    await wait(30);
-    const con = pick(card.querySelector('.con-type'), seed * 2.13 % 1);
-    await wait(30);
-    const plan = pick(card.querySelector('.plan-sel'), seed * 2.71 % 1);
-    await wait(30);
+    const device = pick(card.querySelector('.dev-name'), seed * 1.31 % 1); await wait(30);
+    const ins = pick(card.querySelector('.ins-count'), seed * 1.71 % 1); await wait(30);
+    const con = pick(card.querySelector('.con-type'), seed * 2.13 % 1); await wait(30);
+    const plan = pick(card.querySelector('.plan-sel'), seed * 2.71 % 1); await wait(30);
     const data = pick(card.querySelector('.data-sel'), seed * 3.17 % 1);
     const disc = card.querySelector('.dev-disc-input');
     disc.value = String(Math.floor(seed * 6) * 5000);
     disc.dispatchEvent(new Event('input', { bubbles: true }));
     disc.dispatchEvent(new Event('change', { bubbles: true }));
-    updateCalculations();
-    await wait(80);
+    updateCalculations(); await wait(80);
     const first = money(card.querySelector('.final-1')?.textContent);
     const later = money(card.querySelector('.final-2')?.textContent);
     if (!Number.isFinite(first) || !Number.isFinite(later)) throw new Error(`legacy result invalid: ${first}/${later}`);
@@ -63,21 +57,38 @@ async function legacyCase(page, seed) {
 async function newCase(page, state) {
   return page.evaluate(async state => {
     const wait = ms => new Promise(r => setTimeout(r, ms));
-    const set = (id, value) => {
+    const set = (id, value, text) => {
       const s = document.getElementById(id);
       if (!s) throw new Error(`missing #${id}`);
-      const o = [...s.options].find(o => o.value === value) || [...s.options].find(o => o.textContent.trim() === value);
-      if (!o) throw new Error(`#${id} no option ${JSON.stringify(value)}`);
+      const o = [...s.options].find(o => o.value === value) || [...s.options].find(o => o.textContent.trim() === text);
+      if (!o) throw new Error(`#${id} no option value=${JSON.stringify(value)} text=${JSON.stringify(text)}`);
       s.value = o.value; s.dispatchEvent(new Event('change', { bubbles: true }));
     };
-    set('carrier', state.carrier.value); await wait(40);
-    set('category', state.category); await wait(40);
-    set('device', state.device.value); await wait(40);
-    set('ins', state.ins.value); await wait(40);
-    set('con', state.con.value); await wait(40);
-    set('plan', state.plan.value); await wait(40);
-    set('data', state.data.value); await wait(40);
-    const d = document.getElementById('devDisc'); d.value = String(state.devDisc); d.dispatchEvent(new Event('input', { bubbles: true }));
+    if (typeof state !== 'object') throw new Error('invalid parity state');
+    if (typeof state.carrier?.value !== 'string') throw new Error('legacy carrier missing');
+    if (typeof state.category !== 'string') throw new Error('legacy category missing');
+
+    // Each case must start from a clean optional-state baseline.
+    state = structuredClone(state);
+    if (typeof globalThis.state === 'object' && globalThis.state) {
+      globalThis.state.options = new Map();
+      globalThis.state.netOpts = new Map();
+      globalThis.state.netMain = [0, 0];
+      globalThis.state.discounts = [];
+    }
+    document.querySelectorAll('#discounts select').forEach(s => { s.value = '0'; });
+    const net = document.getElementById('net'); if (net) net.value = '';
+    const netType = document.getElementById('netType'); if (netType) netType.value = '';
+
+    set('carrier', state.carrier.value, state.carrier.text); await wait(40);
+    set('category', state.category, state.category); await wait(40);
+    set('device', state.device.value, state.device.text); await wait(40);
+    set('ins', state.ins.value, state.ins.text); await wait(40);
+    set('con', state.con.value, state.con.text); await wait(40);
+    set('plan', state.plan.value, state.plan.text); await wait(40);
+    set('data', state.data.value, state.data.text); await wait(40);
+    const d = document.getElementById('devDisc');
+    d.value = String(state.devDisc); d.dispatchEvent(new Event('input', { bubbles: true }));
     const r = calc();
     if (!r || !Number.isFinite(r.first) || !Number.isFinite(r.later)) throw new Error('new calc result invalid');
     return { first: r.first, later: r.later };
@@ -88,8 +99,8 @@ const browser = await chromium.launch({ headless: true });
 const oldPage = await browser.newPage();
 const newPage = await browser.newPage();
 try {
-  await pageLoad(oldPage, OLD, 'legacy');
-  await pageLoad(newPage, NEW, 'new');
+  await load(oldPage, OLD, 'legacy');
+  await load(newPage, NEW, 'new');
   await newPage.waitForFunction(() => typeof GLOBAL_DATA !== 'undefined' && GLOBAL_DATA, null, { timeout: 15000 });
   const carriers = await newPage.evaluate(() => Object.keys(GLOBAL_DATA || {}));
   if (!carriers.length) throw new Error('new master data is empty');
@@ -99,9 +110,16 @@ try {
       const old = await legacyCase(oldPage, rng());
       const fresh = await newCase(newPage, old);
       const diff = { first: fresh.first - old.first, later: fresh.later - old.later };
-      const item = { index: i, status: diff.first === 0 && diff.later === 0 ? 'PASS' : 'FAIL', input: { carrier: old.carrier.value, category: old.category, device: old.device.value, ins: old.ins.value, con: old.con.value, plan: old.plan.value, data: old.data.value, devDisc: old.devDisc }, old: { first: old.first, later: old.later }, new: fresh, diff };
+      const item = {
+        index: i,
+        status: diff.first === 0 && diff.later === 0 ? 'PASS' : 'FAIL',
+        input: { carrier: old.carrier, category: old.category, device: old.device, ins: old.ins, con: old.con, plan: old.plan, data: old.data, devDisc: old.devDisc },
+        old: { first: old.first, later: old.later },
+        new: fresh,
+        diff
+      };
       report.cases.push(item);
-      if (item.status === 'FAIL') console.error(`[PARITY] case ${i}:`, JSON.stringify(item));
+      if (item.status === 'FAIL') console.error(`[PARITY] case ${i}: ${JSON.stringify(item)}`);
     } catch (e) {
       report.cases.push({ index: i, status: 'FAIL', reason: e.stack || e.message });
       console.error(`[PARITY] case ${i}: FAIL - ${e.message}`);
@@ -115,7 +133,12 @@ try {
 
 const passed = report.cases.filter(x => x.status === 'PASS').length;
 const failed = report.cases.length - passed;
-report.summary = { generatedCases: report.cases.length, passedCases: passed, failedCases: failed, numericalParity: !report.fatal && report.cases.length === N && failed === 0 ? 'PASS' : 'FAIL' };
+report.summary = {
+  generatedCases: report.cases.length,
+  passedCases: passed,
+  failedCases: failed,
+  numericalParity: !report.fatal && report.cases.length === N && failed === 0 ? 'PASS' : 'FAIL'
+};
 fs.writeFileSync('numerical-parity-report.json', JSON.stringify(report, null, 2));
 console.log('[PARITY] SUMMARY');
 console.log(JSON.stringify(report.summary, null, 2));
