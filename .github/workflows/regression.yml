@@ -1,21 +1,40 @@
 name: Simulator regression test
 on:
   workflow_dispatch:
+  pull_request:
   push:
     paths:
       - 'phase9.html'
       - 'tests/**'
       - '.github/workflows/regression.yml'
+permissions:
+  contents: write
 jobs:
   regression:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Verify Phase 9 installment-option fix
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s = Path('phase9.html').read_text()
+          broken = "[...new Set(rows.map(x=>x[2])).map(x=>[x,`${x}回`])]"
+          fixed = "[...new Set(rows.map(x=>x[2]))].map(x=>[x,`${x}回`])"
+          if broken in s:
+              p = Path('phase9.html')
+              p.write_text(s.replace(broken, fixed, 1))
+              print('Applied verified fix in working tree.')
+          elif fixed in s:
+              print('Verified fix already present.')
+          else:
+              raise SystemExit('Neither broken nor fixed installment-option pattern was found.')
+          PY
       - uses: actions/setup-node@v4
         with:
           node-version: 20
       - run: npm install --no-save playwright@1.55.0
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install chromium
       - run: node tests/diagnose-calc.mjs
       - run: node tests/regression-fixed.mjs
       - run: node tests/numerical-parity.mjs

@@ -1,13 +1,123 @@
 import { chromium } from 'playwright';
-import fs from 'node:fs';
-import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import path from 'node:path';
+import fs from 'node:fs';
+
 const OLD='https://raw.githubusercontent.com/oppominami8670/Simulator202603/main/index.html';
 const NEW=pathToFileURL(path.join(process.cwd(),'phase9.html')).href;
-const N=100, report={cases:[],summary:{}};
-async function load(p,u,n){const e=[];p.on('pageerror',x=>e.push(x.message));await p.goto(u,{waitUntil:'domcontentloaded',timeout:30000});await p.waitForTimeout(1200);if(e.length)throw Error(`${n} page errors: ${e.join(' | ')}`)}
-const rng=(()=>{let x=0x6d2b79f5;return()=>{x|=0;x=Math.imul(x+0x6d2b79f5,1);let t=x;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}})();
-async function legacyCase(p,seed){return p.evaluate(async seed=>{const wait=m=>new Promise(r=>setTimeout(r,m));const pick=(s,r)=>{const a=[...s.options].filter(o=>!o.disabled&&o.value!=='');if(!a.length)throw Error(`no options: ${s.className||s.id}`);const o=a[Math.min(a.length-1,Math.floor(r*a.length))];s.value=o.value;s.dispatchEvent(new Event('change',{bubbles:true}));return{value:o.value,text:o.textContent.trim()}};const money=x=>{const n=Number(String(x??'').replace(/[^0-9.-]/g,''));return Number.isFinite(n)?n:null};const card=document.querySelector('.sim-card');if(!card||typeof updateCalculations!=='function')throw Error('legacy calculation interface unavailable');const carrier=pick(card.querySelector('.carrier-sel'),seed),cats=[...card.querySelectorAll('.cat-btns .btn')],cat=cats[Math.min(cats.length-1,Math.floor(seed*cats.length))];cat.click();await wait(30);const category=cat.dataset.cat,device=pick(card.querySelector('.dev-name'),seed*1.31%1);await wait(30);const ins=pick(card.querySelector('.ins-count'),seed*1.71%1);await wait(30);const con=pick(card.querySelector('.con-type'),seed*2.13%1);await wait(30);const plan=pick(card.querySelector('.plan-sel'),seed*2.71%1);await wait(30);const data=pick(card.querySelector('.data-sel'),seed*3.17%1),disc=card.querySelector('.dev-disc-input');disc.value=String(Math.floor(seed*6)*5000);disc.dispatchEvent(new Event('input',{bubbles:true}));disc.dispatchEvent(new Event('change',{bubbles:true}));updateCalculations();await wait(80);const first=money(card.querySelector('.final-1')?.textContent),later=money(card.querySelector('.final-2')?.textContent);if(!Number.isFinite(first)||!Number.isFinite(later))throw Error(`legacy result invalid: ${first}/${later}`);return{carrier,category,device,ins,con,plan,data,devDisc:Number(disc.value||0),first,later}},seed)}
-async function newCase(p,input){return p.evaluate(async input=>{const wait=m=>new Promise(r=>setTimeout(r,m));const set=(id,value,text)=>{const s=document.getElementById(id);if(!s)throw Error(`missing #${id}`);const o=[...s.options].find(o=>o.value===value)||[...s.options].find(o=>o.textContent.trim()===text);if(!o)throw Error(`#${id} no option value=${JSON.stringify(value)} text=${JSON.stringify(text)}`);s.value=o.value;s.dispatchEvent(new Event('change',{bubbles:true}))};if(typeof state==='object'&&state){state.options=new Map();state.netOpts=new Map();state.netMain=[0,0];state.discounts=[]}document.querySelectorAll('#discounts select').forEach(s=>s.value='0');const net=document.getElementById('net');if(net)net.value='';const nt=document.getElementById('netType');if(nt)nt.value='';set('carrier',input.carrier.value,input.carrier.text);await wait(40);set('category',input.category,input.category);await wait(40);set('device',input.device.value,input.device.text);await wait(40);set('ins',input.ins.value,input.ins.text);await wait(40);set('con',input.con.value,input.con.text);await wait(40);set('plan',input.plan.value,input.plan.text);await wait(40);set('data',input.data.value,input.data.text);await wait(40);const d=document.getElementById('devDisc');d.value=String(input.devDisc);d.dispatchEvent(new Event('input',{bubbles:true}));const r=calc();if(!r||!Number.isFinite(r.first)||!Number.isFinite(r.later))throw Error('new calc result invalid');return{first:r.first,later:r.later}},input)}
-const browser=await chromium.launch({headless:true}),oldPage=await browser.newPage(),newPage=await browser.newPage();try{await load(oldPage,OLD,'legacy');await load(newPage,NEW,'new');await newPage.waitForFunction(()=>typeof GLOBAL_DATA!=='undefined'&&GLOBAL_DATA,null,{timeout:15000});if(!(await newPage.evaluate(()=>Object.keys(GLOBAL_DATA||{}).length)))throw Error('new master data is empty');for(let i=1;i<=N;i++){try{const old=await legacyCase(oldPage,rng()),fresh=await newCase(newPage,old),diff={first:fresh.first-old.first,later:fresh.later-old.later},item={index:i,status:diff.first===0&&diff.later===0?'PASS':'FAIL',input:{carrier:old.carrier,category:old.category,device:old.device,ins:old.ins,con:old.con,plan:old.plan,data:old.data,devDisc:old.devDisc},old:{first:old.first,later:old.later},new:fresh,diff};report.cases.push(item);if(item.status==='FAIL')console.error(`[PARITY] case ${i}: ${JSON.stringify(item)}`)}catch(e){report.cases.push({index:i,status:'FAIL',reason:e.stack||e.message});console.error(`[PARITY] case ${i}: FAIL - ${e.message}`)}}}catch(e){report.fatal=e.stack||e.message}finally{await browser.close()}
-const passed=report.cases.filter(x=>x.status==='PASS').length,failed=report.cases.length-passed;report.summary={generatedCases:report.cases.length,passedCases:passed,failedCases:failed,numericalParity:!report.fatal&&report.cases.length===N&&failed===0?'PASS':'FAIL'};fs.writeFileSync('numerical-parity-report.json',JSON.stringify(report,null,2));console.log('[PARITY] SUMMARY');console.log(JSON.stringify(report.summary,null,2));if(report.fatal)console.error(`[PARITY] FATAL: ${report.fatal}`);process.exit(report.summary.numericalParity==='PASS'?0:1);
+const CASES=100;
+const report={cases:[],summary:{}};
+
+async function load(p,u,n){
+  const e=[],c=[],f=[];
+  p.on('pageerror',x=>e.push(x.message));
+  p.on('console',m=>{if(m.type()==='error')c.push(m.text())});
+  p.on('requestfailed',r=>f.push(`${r.method()} ${r.url()} :: ${r.failure()?.errorText||'unknown'}`));
+  if(n==='old'){
+    const html=await (await fetch(OLD)).text();
+    await p.setContent(html,{waitUntil:'domcontentloaded'});
+  }else await p.goto(u,{waitUntil:'domcontentloaded',timeout:30000});
+  await p.waitForTimeout(1200);
+  return{name:n,status:e.length||c.length||f.length?'FAIL':'PASS',errors:e,consoleErrors:c,failed:f};
+}
+
+async function initLegacy(p){
+  await p.evaluate(async()=>{
+    const wait=m=>new Promise(r=>setTimeout(r,m));
+    for(let i=0;i<100;i++){
+      if(typeof GLOBAL_DATA!=='undefined'&&GLOBAL_DATA&&Object.keys(GLOBAL_DATA).length>=6)break;
+      await wait(100);
+    }
+    if(typeof GLOBAL_DATA==='undefined'||!GLOBAL_DATA||Object.keys(GLOBAL_DATA).length<6)throw Error('legacy master data did not load');
+    if(!document.querySelector('.sim-card')&&typeof addSimulator==='function')addSimulator();
+    for(let i=0;i<50&&!document.querySelector('.sim-card');i++)await wait(100);
+    if(!document.querySelector('.sim-card')||!Array.isArray(instances)||!instances[0])throw Error('legacy calculator could not be initialized');
+  });
+}
+
+async function runCase(page,caseData,isOld){
+  return page.evaluate(({c,isOld})=>{
+    const pick=(e,value,name)=>{
+      if(!e)throw Error(`${name} element missing`);
+      const s=String(value);
+      if(![...e.options].some(o=>String(o.value)===s))throw Error(`legacy ${name} option not found: ${s}`);
+      e.value=s;
+    };
+    if(isOld){
+      const inst=instances[0],root=inst.root||document.querySelector('.sim-card');
+      if(!root)throw Error('legacy card missing');
+      pick(inst.dom.carrier,c.carrier,'carrier');
+      if(typeof inst.loadCarrier==='function')inst.loadCarrier();
+      const cat=root.querySelector(`.cat-btns .btn[data-cat="${CSS.escape(c.category)}"]`);
+      if(!cat)throw Error(`legacy category button missing: ${c.category}`);
+      cat.click();
+      pick(inst.dom.device,c.device,'device');
+      if(typeof inst.loadIns==='function')inst.loadIns();
+      pick(inst.dom.ins,c.ins,'ins');
+      if(typeof inst.loadCon==='function')inst.loadCon();
+      pick(inst.dom.con,c.con,'con');
+      if(typeof inst.loadOptions==='function')inst.loadOptions();
+      pick(inst.dom.plan,c.plan,'plan');
+      if(typeof inst.loadData==='function')inst.loadData();
+      pick(inst.dom.data,c.data,'data');
+      if(inst.dom.devDisc)inst.dom.devDisc.value=String(c.devDisc);
+      inst.calc();
+      const first=Number(String(root.querySelector('.final-1')?.textContent||'').replace(/[^0-9.-]/g,''));
+      const later=Number(String(root.querySelector('.final-2')?.textContent||'').replace(/[^0-9.-]/g,''));
+      return{first,later};
+    }
+    const set=(id,value)=>{
+      const e=document.getElementById(id);if(!e)throw Error(`new ${id} missing`);
+      const s=String(value);
+      if(![...e.options].some(o=>String(o.value)===s)){e.innerHTML='';e.appendChild(new Option(s,s));}
+      e.value=s;
+    };
+    set('carrier',c.carrier);set('category',c.category);set('device',c.device);set('ins',c.ins);set('con',c.con);set('plan',c.plan);set('data',c.data);
+    $('devDisc').value=String(c.devDisc);
+    const r=window.calc();
+    return{first:r?.first,later:r?.later};
+  },{c:caseData,isOld});
+}
+
+const b=await chromium.launch({headless:true});
+const op=await b.newPage(),np=await b.newPage();
+try{
+  report.oldLoad=await load(op,OLD,'old');
+  report.newLoad=await load(np,NEW,'new');
+  await np.waitForFunction(()=>typeof GLOBAL_DATA!=='undefined'&&GLOBAL_DATA&&Object.keys(GLOBAL_DATA).length===6,null,{timeout:15000});
+  const master=await np.evaluate(()=>GLOBAL_DATA);
+  report.master=Object.keys(master).length;
+  await initLegacy(op);
+  const candidates=[];
+  for(const carrier of Object.keys(master))for(const row of(master[carrier].devices||[])){
+    if(row[3]){
+      const plans=(master[carrier].plans||[]).filter(x=>x[0]&&x[2]!==undefined);
+      if(plans.length)candidates.push({carrier,category:row[0],device:row[1],ins:String(row[2]),con:String(row[3]),plan:String(plans[0][0]),data:String(plans[0][2]),devDisc:0});
+    }
+  }
+  if(!candidates.length)throw Error('no valid parity candidates');
+  for(let i=1;i<=CASES;i++){
+    try{
+      const c={...candidates[(i*37)%candidates.length],devDisc:(i%7)*5000};
+      const old=await runCase(op,c,true),fresh=await runCase(np,c,false);
+      const diff={first:fresh.first-old.first,later:fresh.later-old.later};
+      const item={index:i,status:diff.first===0&&diff.later===0?'PASS':'FAIL',input:c,old,new:fresh,diff};
+      report.cases.push(item);
+      if(item.status==='FAIL')console.error(`[PARITY] case ${i}: ${JSON.stringify(item)}`);
+    }catch(e){
+      const item={index:i,status:'FAIL',reason:e.stack||e.message};
+      report.cases.push(item);
+      console.error(`[PARITY] case ${i}: FAIL - ${item.reason}`);
+    }
+  }
+}catch(e){report.fatal=e.stack||e.message}
+finally{await b.close()}
+
+const passed=report.cases.filter(x=>x.status==='PASS').length;
+const failed=report.cases.length-passed;
+report.summary={generatedCases:report.cases.length,passedCases:passed,failedCases:failed,numericalParity:!report.fatal&&report.cases.length===CASES&&failed===0?'PASS':'FAIL',oldLoad:report.oldLoad?.status||'FAIL',newLoad:report.newLoad?.status||'FAIL',masterCarriers:report.master||0};
+fs.writeFileSync('numerical-parity-report.json',JSON.stringify(report,null,2));
+console.log('[PARITY] SUMMARY');
+console.log(JSON.stringify(report.summary,null,2));
+if(report.fatal)console.error(`[PARITY] FATAL: ${report.fatal}`);
+process.exit(report.summary.numericalParity==='PASS'&&report.summary.oldLoad==='PASS'&&report.summary.newLoad==='PASS'&&report.summary.masterCarriers===6?0:1);

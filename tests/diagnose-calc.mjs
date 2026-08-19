@@ -2,42 +2,19 @@ import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-
-const file = path.join(process.cwd(), 'phase9.html');
-const html = fs.readFileSync(file, 'utf8');
-const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage();
-const errors = [];
-page.on('pageerror', e => errors.push({ message: e.message, stack: e.stack }));
-await page.goto(pathToFileURL(file).href, { waitUntil: 'domcontentloaded', timeout: 30000 });
-await page.waitForTimeout(1000);
-
-const result = await page.evaluate(() => {
-  const script = [...document.scripts].map(s => s.textContent || '').find(s => s.includes('function calc')) || '';
-  const marker = script.indexOf('function calc');
-  const calcSource = typeof calc === 'function' ? calc.toString() : '';
-  let runtime = null;
-  try { if (typeof calc === 'function') calc(); }
-  catch (e) { runtime = { name: e.name, message: e.message, stack: e.stack || null }; }
-  return {
-    scriptLength: script.length,
-    calcMarker: marker,
-    calcSourceLength: calcSource.length,
-    runtime,
-    scriptAroundRuntimeColumn: script.slice(Math.max(0, 14053 - 700), 14053 + 700),
-    calcSourceAroundRuntimeColumn: marker >= 0 ? script.slice(Math.max(marker, 14053 - 700), 14053 + 700) : '',
-    calcHead: calcSource.slice(0, 500),
-    calcTail: calcSource.slice(-500)
-  };
-});
-
-console.log('[DIAG] page errors:', JSON.stringify(errors, null, 2));
-console.log('[DIAG] runtime:', JSON.stringify(result.runtime, null, 2));
-console.log('[DIAG] scriptLength:', result.scriptLength);
-console.log('[DIAG] calcMarker:', result.calcMarker);
-console.log('[DIAG] calcSourceLength:', result.calcSourceLength);
-console.log('[DIAG] script around column 14053:\n' + result.scriptAroundRuntimeColumn);
-console.log('[DIAG] calc source head:\n' + result.calcHead);
-console.log('[DIAG] calc source tail:\n' + result.calcTail);
-fs.writeFileSync('calc-diagnostic.json', JSON.stringify({ errors, ...result }, null, 2));
+const file=path.join(process.cwd(),'phase9.html'),browser=await chromium.launch({headless:true}),page=await browser.newPage(),errors=[],consoleErrors=[],failedRequests=[];
+page.on('pageerror',e=>errors.push({message:e.message,stack:e.stack||null}));
+page.on('console',m=>{if(m.type()==='error')consoleErrors.push(m.text())});
+page.on('requestfailed',r=>failedRequests.push(`${r.method()} ${r.url()} :: ${r.failure()?.errorText||'unknown'}`));
+await page.goto(pathToFileURL(file).href,{waitUntil:'domcontentloaded',timeout:30000});
+await page.waitForTimeout(1500);
+await page.waitForFunction(()=>typeof GLOBAL_DATA!=='undefined'&&GLOBAL_DATA!==null,{timeout:15000});
+const result=await page.evaluate(()=>{const script=[...document.scripts].map(s=>s.textContent||'').find(s=>s.includes('function calc'))||'',required=['carrier','category','device','ins','con','plan','data','devDisc'],controls=Object.fromEntries(required.map(id=>[id,!!document.getElementById(id)])),carriers=Object.keys(GLOBAL_DATA||{});return{carriers,scriptLength:script.length,calcMarker:script.indexOf('function calc'),calcCallable:typeof window.calc==='function',controls,allControlsPresent:Object.values(controls).every(Boolean)}});
+console.log('[DIAG] page errors:',JSON.stringify(errors,null,2));
+console.log('[DIAG] console errors:',JSON.stringify(consoleErrors,null,2));
+console.log('[DIAG] failed requests:',JSON.stringify(failedRequests,null,2));
+console.log('[DIAG] readiness:',JSON.stringify(result,null,2));
+const output={errors,consoleErrors,failedRequests,...result};
+fs.writeFileSync('calc-diagnostic.json',JSON.stringify(output,null,2));
 await browser.close();
+if(errors.length||consoleErrors.length||failedRequests.length||result.carriers.length!==6||!result.calcCallable||!result.allControlsPresent)process.exit(1);
