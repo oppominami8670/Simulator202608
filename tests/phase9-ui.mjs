@@ -33,7 +33,7 @@ page.on('console', m => { if (m.type() === 'error') errors.push(`console: ${m.te
 try {
   await page.route(GAS_URL, route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(fixture) }));
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await page.waitForFunction(() => window.GLOBAL_DATA && Object.keys(window.GLOBAL_DATA).length === 6, { timeout: 5000 });
+  await page.waitForFunction(() => typeof GLOBAL_DATA !== 'undefined' && GLOBAL_DATA && Object.keys(GLOBAL_DATA).length === 6, { timeout: 5000 });
   await page.click('.modebtn[data-mode="engine"]');
 
   await page.selectOption('#carrier', 'TestCarrier');
