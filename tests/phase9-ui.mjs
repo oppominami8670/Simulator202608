@@ -35,8 +35,8 @@ try {
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
   await page.waitForFunction(() => typeof GLOBAL_DATA !== 'undefined' && GLOBAL_DATA && Object.keys(GLOBAL_DATA).length === 6, { timeout: 5000 });
 
-  // Engine controls are inside the proposal modal, so open the modal first.
-  await page.click('#add');
+  // Proposal editing is opened by clicking an existing proposal cell.
+  await page.locator('.cell').first().click();
   await page.waitForSelector('#modalBg.open', { state: 'attached', timeout: 2000 });
   await page.click('.modebtn[data-mode="engine"]');
   await page.waitForSelector('#engineArea', { state: 'visible', timeout: 2000 });
