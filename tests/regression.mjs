@@ -63,7 +63,7 @@ async function load(page, url, name, sourceText) {
 
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(1000);
   } catch (error) {
     report.pages[name] = { status: 'FAIL', pageErrors, consoleErrors, failedRequests, navigationError: error.stack || error.message };
     console.error(`[REGRESSION] ${name} navigation error: ${error.stack || error.message}`);
@@ -98,6 +98,30 @@ const newPage = await browser.newPage();
 await load(oldPage, oldUrl, 'old', oldHtml);
 await load(newPage, pathToFileURL(newPath).href, 'new', newHtml);
 
+// phase9 initializes GLOBAL_DATA asynchronously. Do not call calc() until the
+// master has actually arrived; otherwise GLOBAL_DATA[c] throws when GLOBAL_DATA
+// is still null. This also makes the regression failure distinguishable from a
+// genuine calculation/DOM defect.
+try {
+  await newPage.waitForFunction(() => typeof GLOBAL_DATA !== 'undefined' && GLOBAL_DATA !== null, null, { timeout: 15000 });
+  const readiness = await newPage.evaluate(() => ({
+    ready: typeof GLOBAL_DATA !== 'undefined' && GLOBAL_DATA !== null,
+    carriers: GLOBAL_DATA && typeof GLOBAL_DATA === 'object' ? Object.keys(GLOBAL_DATA) : [],
+    carrierValue: document.getElementById('carrier')?.value ?? null
+  }));
+  report.newReadiness = { status: 'PASS', ...readiness };
+  console.log(`[REGRESSION] new master data: PASS (${readiness.carriers.length} carriers)`);
+} catch (error) {
+  const readiness = await newPage.evaluate(() => ({
+    ready: typeof GLOBAL_DATA !== 'undefined' && GLOBAL_DATA !== null,
+    carriers: typeof GLOBAL_DATA !== 'undefined' && GLOBAL_DATA ? Object.keys(GLOBAL_DATA) : [],
+    carrierValue: document.getElementById('carrier')?.value ?? null,
+    requiredIds: ['carrier','category','device','ins','con','devDisc','plan','data','discounts','options','net','netType','netOpts','engineTotal','laterTotal','breakdown'].map(id => ({ id, exists: !!document.getElementById(id) }))
+  }));
+  report.newReadiness = { status: 'FAIL', reason: error.stack || error.message, ...readiness };
+  console.error(`[REGRESSION] new master data: FAIL - ${report.newReadiness.reason}`);
+}
+
 try {
   const newState = await newPage.evaluate(() => { const r = typeof calc === 'function' ? calc() : null; return r && typeof r.first === 'number' && typeof r.later === 'number' ? r : null; });
   report.newEngine = newState ? { status: 'PASS', first: newState.first, later: newState.later } : { status: 'FAIL', reason: 'calc() did not return numeric first/later' };
@@ -113,7 +137,8 @@ const rng = (() => { let x = 0x9e3779b9; return () => ((x = Math.imul(x ^ x >>> 
 for (let i = 0; i < 100; i++) {
   try {
     const result = await newPage.evaluate((seed) => {
-      const pick = s => { if (!s || !s.options.length) return; const enabled = [...s.options].filter(o => !o.disabled); if (enabled.length) s.value = enabled[Math.floor(seed * enabled.length)].value; s.dispatchEvent(new Event('change', { bubbles: true })); };
+      if (typeof GLOBAL_DATA === 'undefined' || GLOBAL_DATA === null) throw new Error('GLOBAL_DATA is not ready before regression case');
+      const pick = s => { if (!s || !s.options.length) return; const enabled = [...s.options].filter(o => !o.disabled && o.value !== ''); if (enabled.length) s.value = enabled[Math.floor(seed * enabled.length)].value; s.dispatchEvent(new Event('change', { bubbles: true })); };
       for (const id of ['carrier','category','device','ins','con','plan','data','net','netType']) pick(document.getElementById(id));
       const d = document.getElementById('devDisc'); if (d) { d.value = String(Math.floor(seed * 6) * 5000); d.dispatchEvent(new Event('input', { bubbles: true })); }
       const r = typeof calc === 'function' ? calc() : null; return r && Number.isFinite(r.first) && Number.isFinite(r.later) ? r : null;
