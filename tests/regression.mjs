@@ -13,8 +13,13 @@ async function fetchText(url) {
   if (!response.ok) throw new Error(`fetch failed: ${response.status} ${response.statusText} (${url})`);
   return await response.text();
 }
-
 function countScripts(html) { return (html.match(/<script(?:[^>]*)>/gi) || []).length; }
+function contextAt(text, line, column, radius = 160) {
+  const lines = text.split(/\r?\n/);
+  const target = lines[Math.max(0, (line || 1) - 1)] || '';
+  const col = Math.max(0, (column || 1) - 1);
+  return { line, column, lineText: target.slice(Math.max(0, col - radius), col + radius), pointer: ' '.repeat(Math.min(radius, col)) + '^' };
+}
 
 let oldHtml, newHtml;
 try {
@@ -38,11 +43,14 @@ catch (error) {
   process.exit(1);
 }
 
-async function load(page, url, name) {
-  const pageErrors = [], failedRequests = [], consoleErrors = [];
-  page.on('pageerror', error => pageErrors.push(error.stack || error.message));
+async function load(page, url, name, sourceText) {
+  const pageErrors = [], failedRequests = [], consoleErrors = [], requestDetails = [];
+  page.on('pageerror', error => {
+    pageErrors.push({ message: error.message, name: error.name, stack: error.stack || null });
+  });
   page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
   page.on('requestfailed', request => failedRequests.push(`${request.method()} ${request.url()} :: ${request.failure()?.errorText || 'unknown'}`));
+  page.on('request', request => requestDetails.push({ url: request.url(), resourceType: request.resourceType() }));
 
   try {
     await page.route('https://script.google.com/**', async route => {
@@ -71,9 +79,13 @@ async function load(page, url, name) {
     }));
   } catch (error) { scriptDiagnostics = [{ status: 'DIAGNOSTIC_ERROR', error: error.stack || error.message }]; }
 
-  report.pages[name] = { status: pageErrors.length || consoleErrors.length ? 'FAIL' : 'PASS', pageErrors, consoleErrors, failedRequests, scriptDiagnostics };
+  const exactErrors = pageErrors.map(e => {
+    const match = String(e.stack || '').match(/(?:^|\n)\s*at\s+(?:[^\n]*\s+)?(?:file|https?|[^\s]+):(\d+):(\d+)/);
+    return { ...e, location: match ? { line: Number(match[1]), column: Number(match[2]), context: contextAt(sourceText, Number(match[1]), Number(match[2])) } : null };
+  });
+  report.pages[name] = { status: exactErrors.length || consoleErrors.length || failedRequests.length ? 'FAIL' : 'PASS', pageErrors: exactErrors, consoleErrors, failedRequests, requestDetails: requestDetails.filter(x => x.resourceType === 'script' || /phase9\.html|index\.html|script\.google\.com/.test(x.url)), scriptDiagnostics };
   console.log(`[REGRESSION] ${name} load: ${report.pages[name].status}`);
-  if (pageErrors.length) console.error(`[REGRESSION] ${name} page errors:\n${pageErrors.join('\n')}`);
+  if (exactErrors.length) console.error(`[REGRESSION] ${name} page errors:\n${JSON.stringify(exactErrors, null, 2)}`);
   if (consoleErrors.length) console.error(`[REGRESSION] ${name} console errors:\n${consoleErrors.join('\n')}`);
   const scriptFails = scriptDiagnostics.filter(x => x.status === 'FAIL');
   if (scriptFails.length) console.error(`[REGRESSION] ${name} script diagnostics:\n${JSON.stringify(scriptFails, null, 2)}`);
@@ -83,8 +95,8 @@ async function load(page, url, name) {
 
 const oldPage = await browser.newPage();
 const newPage = await browser.newPage();
-await load(oldPage, oldUrl, 'old');
-await load(newPage, pathToFileURL(newPath).href, 'new');
+await load(oldPage, oldUrl, 'old', oldHtml);
+await load(newPage, pathToFileURL(newPath).href, 'new', newHtml);
 
 try {
   const newState = await newPage.evaluate(() => { const r = typeof calc === 'function' ? calc() : null; return r && typeof r.first === 'number' && typeof r.later === 'number' ? r : null; });
