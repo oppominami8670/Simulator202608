@@ -1,6 +1,7 @@
 name: Simulator regression test
 on:
   workflow_dispatch:
+  pull_request:
   push:
     paths:
       - 'phase9.html'
