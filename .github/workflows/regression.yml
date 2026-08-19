@@ -35,6 +35,7 @@ jobs:
           node-version: 20
       - run: npm install --no-save playwright@1.55.0
       - run: npx playwright install chromium
+      - run: node tests/phase9-ui.mjs
       - run: node tests/diagnose-calc.mjs
       - run: node tests/regression-fixed.mjs
       - run: node tests/numerical-parity.mjs
