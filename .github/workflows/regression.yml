@@ -14,23 +14,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Apply verified Phase 9 fix
+      - name: Verify Phase 9 installment-option fix
         run: |
           python - <<'PY'
           from pathlib import Path
-          p = Path('phase9.html')
-          s = p.read_text()
-          old = "[...new Set(rows.map(x=>x[2])).map(x=>[x,`${x}回`])]"
-          new = "[...new Set(rows.map(x=>x[2]))].map(x=>[x,`${x}回`])"
-          if old not in s:
-              raise SystemExit('verified bug pattern not found; no automatic patch applied')
-          p.write_text(s.replace(old, new, 1))
+          s = Path('phase9.html').read_text()
+          broken = "[...new Set(rows.map(x=>x[2])).map(x=>[x,`${x}回`])]"
+          fixed = "[...new Set(rows.map(x=>x[2]))].map(x=>[x,`${x}回`])"
+          if broken in s:
+              p = Path('phase9.html')
+              p.write_text(s.replace(broken, fixed, 1))
+              print('Applied verified fix in working tree.')
+          elif fixed in s:
+              print('Verified fix already present.')
+          else:
+              raise SystemExit('Neither broken nor fixed installment-option pattern was found.')
           PY
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add phase9.html
-          git commit -m "fix: correct installment option list construction"
-          git push --force-with-lease origin HEAD:${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
