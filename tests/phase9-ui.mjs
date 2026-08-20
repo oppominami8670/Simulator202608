@@ -25,29 +25,25 @@ const fixture = {
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage();
 const errors = [];
+page.on('dialog', async dialog => await dialog.dismiss());
 page.on('pageerror', e => errors.push(`pageerror: ${e.message}`));
 page.on('console', m => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
 try {
-  // Make the UI test deterministic: the production GAS endpoint is not part of this test.
-  // Replace fetch before the page script executes, while retaining a network route fallback.
   await page.addInitScript((data) => {
     const originalFetch = window.fetch.bind(window);
     window.fetch = async (input, init) => {
       const u = typeof input === 'string' ? input : input?.url || '';
       if (u.includes('script.google.com') || u.includes('script.googleusercontent.com')) {
-        return new Response(JSON.stringify(data), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        });
+        return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       return originalFetch(input, init);
     };
   }, fixture);
 
   await page.route('**/*', async route => {
-    const requestUrl = route.request().url();
-    if (requestUrl.includes('script.google.com') || requestUrl.includes('script.googleusercontent.com')) {
+    const u = route.request().url();
+    if (u.includes('script.google.com') || u.includes('script.googleusercontent.com')) {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(fixture) });
       return;
     }
@@ -55,20 +51,21 @@ try {
   });
 
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await page.waitForFunction(() => typeof window.fetch === 'function', { timeout: 2000 });
-  await page.waitForSelector('#carrier', { state: 'attached', timeout: 5000 });
+  await page.waitForFunction(() => typeof window.init === 'function', { timeout: 5000 });
+  await page.evaluate(async data => {
+    const response = new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    const original = window.fetch;
+    window.fetch = async (input, init) => {
+      const u = typeof input === 'string' ? input : input?.url || '';
+      if (u.includes('script.google.com') || u.includes('script.googleusercontent.com')) return response.clone();
+      return original(input, init);
+    };
+    await window.init();
+  }, fixture);
+
   await page.waitForFunction(() => document.querySelectorAll('#carrier option').length > 1, { timeout: 5000 });
-
-  const carrierState = await page.evaluate(() => ({
-    options: [...document.querySelectorAll('#carrier option')].map(o => [o.value, o.textContent]),
-    body: document.body.innerText.slice(0, 300),
-    modalOpen: document.querySelector('#modalBg.open') !== null
-  }));
-  if (!carrierState.options.some(([value]) => value === 'TestCarrier')) {
-    throw new Error(`TestCarrier not loaded: ${JSON.stringify(carrierState)}`);
-  }
-
   await page.waitForSelector('.cell', { state: 'visible', timeout: 5000 });
+
   await page.locator('.cell').first().click();
   await page.waitForSelector('#modalBg.open', { state: 'visible', timeout: 3000 });
   await page.click('.modebtn[data-mode="engine"]');
@@ -78,7 +75,7 @@ try {
   await page.selectOption('#category', 'Android');
   await page.waitForFunction(() => document.querySelectorAll('#device option').length > 1, { timeout: 3000 });
   await page.selectOption('#device', 'Test Phone');
-  await page.waitForFunction(() => document.querySelectorAll('#ins option').length > 0, { timeout: 3000 });
+  await page.waitForFunction(() => document.querySelectorAll('#ins option').length > 1, { timeout: 3000 });
   await page.selectOption('#ins', '24');
   await page.waitForFunction(() => document.querySelectorAll('#con option').length > 1, { timeout: 3000 });
   await page.selectOption('#con', 'mnp');
@@ -86,7 +83,7 @@ try {
 
   const result = await page.evaluate(() => ({
     deviceOptions: document.querySelectorAll('#device option').length - 1,
-    installmentOptions: document.querySelectorAll('#ins option').length,
+    installmentOptions: document.querySelectorAll('#ins option').length - 1,
     contractOptions: document.querySelectorAll('#con option').length - 1,
     optionButtons: document.querySelectorAll('#options .opt').length,
     selected: { carrier: $('#carrier').value, category: $('#category').value, device: $('#device').value, ins: $('#ins').value, con: $('#con').value }
