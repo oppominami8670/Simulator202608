@@ -37,27 +37,14 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          p = Path('phase9.html')
-          s = p.read_text()
-          marker = '/* PHASE9_DEPENDENT_SELECT_FIX */'
+          p=Path('phase9.html'); s=p.read_text(); marker='/* PHASE9_DEPENDENT_SELECT_FIX_V2 */'
           if marker not in s:
-              fix = """\n<script>/* PHASE9_DEPENDENT_SELECT_FIX */\n(()=>{const bind=(id,fn)=>{const e=document.getElementById(id);if(e)e.onchange=fn};bind('carrier',loadCarrier);bind('category',loadDevices);bind('device',loadIns);bind('ins',loadCon);bind('con',loadOptions)})();\n</script>\n"""
-              if '</body>' not in s:
-                  raise SystemExit('phase9.html has no </body> marker')
-              p.write_text(s.replace('</body>', fix + '</body>', 1))
-              print('Applied dependent-select handlers.')
-          else:
-              print('Dependent-select handlers already present.')
+              fix="""\n<script>/* PHASE9_DEPENDENT_SELECT_FIX_V2 */\n(()=>{const rows=()=>GLOBAL_DATA?.[val('carrier')]?.devices||[];function fillIns(){const r=rows().filter(x=>x[0]===val('category')&&x[1]===val('device'));opts($('ins'),[...new Set(r.map(x=>x[2]))].map(x=>[x,`${x}回`]),'支払回数');$('con').innerHTML='<option value="">区分</option>';$('options').innerHTML=''}function fillCon(){const r=rows().filter(x=>x[0]===val('category')&&x[1]===val('device')&&String(x[2])===String(val('ins')));const lm={mnp:'MNP',new:'新規',standalone:'機種変更'};const seen=new Set();$('con').innerHTML='<option value="">区分</option>';r.forEach(x=>{if(!seen.has(x[3])){$('con').appendChild(new Option(lm[x[3]]||x[3],x[3]));seen.add(x[3])}});if(typeof loadOptions==='function')loadOptions()}function bind(id,fn){const e=$(id);if(e)e.onchange=fn}bind('device',fillIns);bind('ins',fillCon);bind('con',()=>{if(typeof loadOptions==='function')loadOptions()})})();\n</script>\n"""
+              if '</body>' not in s: raise SystemExit('phase9.html has no </body> marker')
+              p.write_text(s.replace('</body>',fix+'</body>',1)); print('Applied V2 dependent-select handlers.')
+          else: print('V2 dependent-select handlers already present.')
           PY
-          if git diff --quiet -- phase9.html; then
-            echo 'No Phase 9 source patch required.'
-          else
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add -- phase9.html
-            git commit -m 'fix: restore Phase9 dependent select handlers'
-            git push --force origin "HEAD:${HEAD_REF}"
-          fi
+          if git diff --quiet -- phase9.html; then echo 'No Phase 9 source patch required.'; else git config user.name 'github-actions[bot]'; git config user.email '41898282+github-actions[bot]@users.noreply.github.com'; git add -- phase9.html; git commit -m 'fix: make Phase9 dependent selects populate from master data'; git push --force origin "HEAD:${HEAD_REF}"; fi
       - uses: actions/setup-node@v4
         with:
           node-version: 20
