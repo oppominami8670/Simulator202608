@@ -30,6 +30,34 @@ jobs:
           else:
               raise SystemExit('Neither broken nor fixed installment-option pattern was found.')
           PY
+      - name: Ensure Phase 9 dependent-select handlers
+        if: github.event_name == 'pull_request'
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('phase9.html')
+          s = p.read_text()
+          marker = '/* PHASE9_DEPENDENT_SELECT_FIX */'
+          if marker not in s:
+              fix = """\n<script>/* PHASE9_DEPENDENT_SELECT_FIX */\n(()=>{const bind=(id,fn)=>{const e=document.getElementById(id);if(e)e.onchange=fn};bind('carrier',loadCarrier);bind('category',loadDevices);bind('device',loadIns);bind('ins',loadCon);bind('con',loadOptions)})();\n</script>\n"""
+              if '</body>' not in s:
+                  raise SystemExit('phase9.html has no </body> marker')
+              p.write_text(s.replace('</body>', fix + '</body>', 1))
+              print('Applied dependent-select handlers.')
+          else:
+              print('Dependent-select handlers already present.')
+          PY
+          if git diff --quiet -- phase9.html; then
+            echo 'No Phase 9 source patch required.'
+          else
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -- phase9.html
+            git commit -m 'fix: restore Phase9 dependent select handlers'
+            git push origin "HEAD:${HEAD_REF}"
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: 20
