@@ -37,7 +37,7 @@ try {
   }, fixture);
 
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await page.waitForFunction(() => window.GLOBAL_DATA && Object.keys(window.GLOBAL_DATA).length === 6, { timeout: 5000 });
+  await page.waitForFunction(() => typeof GLOBAL_DATA !== 'undefined' && GLOBAL_DATA && Object.keys(GLOBAL_DATA).length === 6, { timeout: 5000 });
   await page.waitForSelector('.cell', { state: 'visible', timeout: 5000 });
 
   await page.locator('.cell').first().click();
