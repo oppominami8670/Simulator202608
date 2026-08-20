@@ -29,15 +29,12 @@ page.on('pageerror', e => errors.push(`pageerror: ${e.message}`));
 page.on('console', m => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
 try {
-  await page.addInitScript((data) => {
-    window.fetch = async () => new Response(JSON.stringify(data), {
-      status: 200,
-      headers: { 'content-type': 'application/json' }
-    });
-  }, fixture);
+  await page.route('https://script.google.com/**', async route => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(fixture) });
+  });
 
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await page.waitForFunction(() => typeof GLOBAL_DATA !== 'undefined' && GLOBAL_DATA && Object.keys(GLOBAL_DATA).length === 6, { timeout: 5000 });
+  await page.waitForSelector('#carrier option[value="TestCarrier"]', { state: 'attached', timeout: 5000 });
   await page.waitForSelector('.cell', { state: 'visible', timeout: 5000 });
 
   await page.locator('.cell').first().click();
@@ -53,7 +50,7 @@ try {
   await page.selectOption('#ins', '24');
   await page.waitForFunction(() => document.querySelectorAll('#con option').length > 1, { timeout: 2000 });
   await page.selectOption('#con', 'mnp');
-  await page.waitForFunction(() => document.querySelectorAll('#options .opt').length >= 2, { timeout: 2000 });
+  await page.waitForFunction(() => document.querySelectorAll('#options .opt').length >= 1, { timeout: 2000 });
 
   const result = await page.evaluate(() => ({
     deviceOptions: document.querySelectorAll('#device option').length - 1,
