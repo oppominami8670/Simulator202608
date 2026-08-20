@@ -29,12 +29,18 @@ page.on('pageerror', e => errors.push(`pageerror: ${e.message}`));
 page.on('console', m => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
 try {
-  await page.route('https://script.google.com/**', async route => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(fixture)
-    });
+  const gasUrl = 'https://script.google.com/macros/s/AKfycbxUj8Ojmgq2H-weGZRui_rdi9W6_y6QSUjbjKY1Lr89IsErmVNqxYZx_walEIs3QoaA/exec';
+  await page.route('**/*', async route => {
+    const requestUrl = route.request().url();
+    if (requestUrl === gasUrl || requestUrl.startsWith(gasUrl + '?') || requestUrl.includes('script.googleusercontent.com')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(fixture)
+      });
+      return;
+    }
+    await route.continue();
   });
 
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
