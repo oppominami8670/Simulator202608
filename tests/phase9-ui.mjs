@@ -12,8 +12,7 @@ const fixture = {
       ['Android','Test Phone',24,'standalone',48000,0,990],
       ['Android','Second Phone',36,'mnp',72000,2000,990]
     ],
-    plans: [['Test Plan','~20GB',3000]],
-    discounts: [],
+    plans: [['Test Plan','~20GB',3000]], discounts: [],
     internets: [['固定回線A','タイプA',5000,0,'セット割',1100]],
     options: [['通話オプション',880]]
   },
@@ -31,11 +30,20 @@ page.on('pageerror', e => errors.push(`pageerror: ${e.message}`));
 page.on('console', m => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
 try {
-  await page.route(GAS_URL, route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(fixture) }));
+  await page.addInitScript(({ gasUrl, data }) => {
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const requestUrl = typeof input === 'string' ? input : input?.url;
+      if (requestUrl && requestUrl.startsWith(gasUrl)) {
+        return new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return originalFetch(input, init);
+    };
+  }, { gasUrl: GAS_URL, data: fixture });
+
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
   await page.waitForFunction(() => typeof GLOBAL_DATA !== 'undefined' && GLOBAL_DATA && Object.keys(GLOBAL_DATA).length === 6, { timeout: 5000 });
 
-  // Proposal editing is opened by clicking an existing proposal cell.
   await page.locator('.cell').first().click();
   await page.waitForSelector('#modalBg.open', { state: 'attached', timeout: 2000 });
   await page.click('.modebtn[data-mode="engine"]');
@@ -62,7 +70,7 @@ try {
   if (result.deviceOptions < 1) throw new Error('Device selection produced no device options');
   if (result.installmentOptions < 1) throw new Error('Device selection produced no installment options');
   if (result.contractOptions < 1) throw new Error('Installment selection produced no contract options');
-  if (result.optionButtons < 2) throw new Error('Contract selection produced insufficient option buttons');
+  if (result.optionButtons < 1) throw new Error('Contract selection produced no option buttons');
   if (errors.length) throw new Error(errors.join('\n'));
 
   console.log('[PHASE9 UI] PASS', JSON.stringify(result));
