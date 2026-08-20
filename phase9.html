@@ -2,4 +2,8 @@
 <script>/* PHASE9_DEPENDENT_SELECT_FIX */
 (()=>{const bind=(id,fn)=>{const e=document.getElementById(id);if(e)e.onchange=fn};bind('carrier',loadCarrier);bind('category',loadDevices);bind('device',loadIns);bind('ins',loadCon);bind('con',loadOptions)})();
 </script>
+
+<script>/* PHASE9_DEPENDENT_SELECT_FIX_V2 */
+(()=>{const rows=()=>GLOBAL_DATA?.[val('carrier')]?.devices||[];function fillIns(){const r=rows().filter(x=>x[0]===val('category')&&x[1]===val('device'));opts($('ins'),[...new Set(r.map(x=>x[2]))].map(x=>[x,`${x}回`]),'支払回数');$('con').innerHTML='<option value="">区分</option>';$('options').innerHTML=''}function fillCon(){const r=rows().filter(x=>x[0]===val('category')&&x[1]===val('device')&&String(x[2])===String(val('ins')));const lm={mnp:'MNP',new:'新規',standalone:'機種変更'};const seen=new Set();$('con').innerHTML='<option value="">区分</option>';r.forEach(x=>{if(!seen.has(x[3])){$('con').appendChild(new Option(lm[x[3]]||x[3],x[3]));seen.add(x[3])}});if(typeof loadOptions==='function')loadOptions()}function bind(id,fn){const e=$(id);if(e)e.onchange=fn}bind('device',fillIns);bind('ins',fillCon);bind('con',()=>{if(typeof loadOptions==='function')loadOptions()})})();
+</script>
 </body></html>
