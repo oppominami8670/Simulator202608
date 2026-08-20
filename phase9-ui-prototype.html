@@ -39,9 +39,8 @@
 </section>
 </main>
 <script>
-const lineNames=()=>Array.from(document.querySelectorAll('#currentHead th[data-line]')).map(x=>x.dataset.line);
 let lines=['A'];
-const rows=[['キャリア','選択してください'],['プラン','選択してください'],['月額','¥0'],['端末','選択してください'],['残債','¥0'],['支払残数','0回']];
+const rows=[['キャリア','選択してください'],['プラン','選択してください'],['端末','選択してください'],['残債','¥0'],['支払残数','0回'],['月額','¥0']];
 function renderCurrent(){
  const h=document.getElementById('currentHead');
  h.innerHTML='<th class="label">項目</th>'+lines.map(x=>`<th data-line="${x}">${x}</th>`).join('')+'<th>固定回線</th>';
