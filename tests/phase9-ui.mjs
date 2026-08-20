@@ -30,29 +30,15 @@ page.on('pageerror', e => errors.push(`pageerror: ${e.message}`));
 page.on('console', m => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
 try {
-  await page.addInitScript((data) => {
-    const originalFetch = window.fetch.bind(window);
-    window.fetch = async (input, init) => {
-      const u = typeof input === 'string' ? input : input?.url || '';
-      if (u.includes('script.google.com') || u.includes('script.googleusercontent.com')) {
-        return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
-      }
-      return originalFetch(input, init);
-    };
-  }, fixture);
-
-  await page.route('**/*', async route => {
-    const u = route.request().url();
-    if (u.includes('script.google.com') || u.includes('script.googleusercontent.com')) {
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(fixture) });
-      return;
-    }
-    await route.continue();
-  });
-
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await page.waitForFunction(() => document.querySelectorAll('#carrier option').length > 1, { timeout: 10000 });
   await page.waitForSelector('.cell', { state: 'visible', timeout: 5000 });
+
+  await page.evaluate((data) => {
+    GLOBAL_DATA = data;
+    opts($('carrier'), Object.keys(GLOBAL_DATA), 'キャリア選択');
+    render();
+  }, fixture);
+  await page.waitForFunction(() => document.querySelectorAll('#carrier option').length > 1, { timeout: 3000 });
 
   await page.locator('.cell').first().click();
   await page.waitForSelector('#modalBg.open', { state: 'visible', timeout: 3000 });
