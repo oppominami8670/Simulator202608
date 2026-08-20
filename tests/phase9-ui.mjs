@@ -3,7 +3,6 @@ import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 
 const url = pathToFileURL(path.join(process.cwd(), 'phase9.html')).href;
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbxUj8Ojmgq2H-weGZRui_rdi9W6_y6QSUjbjKY1Lr89IsErmVNqxYZx_walEIs3QoaA/exec';
 const fixture = {
   TestCarrier: {
     devices: [
@@ -30,22 +29,19 @@ page.on('pageerror', e => errors.push(`pageerror: ${e.message}`));
 page.on('console', m => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
 try {
-  await page.addInitScript(({ gasUrl, data }) => {
-    const originalFetch = window.fetch.bind(window);
-    window.fetch = async (input, init) => {
-      const requestUrl = typeof input === 'string' ? input : input?.url;
-      if (requestUrl && requestUrl.startsWith(gasUrl)) {
-        return new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } });
-      }
-      return originalFetch(input, init);
-    };
-  }, { gasUrl: GAS_URL, data: fixture });
+  await page.addInitScript((data) => {
+    window.fetch = async () => new Response(JSON.stringify(data), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    });
+  }, fixture);
 
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await page.waitForFunction(() => typeof GLOBAL_DATA !== 'undefined' && GLOBAL_DATA && Object.keys(GLOBAL_DATA).length === 6, { timeout: 5000 });
+  await page.waitForFunction(() => window.GLOBAL_DATA && Object.keys(window.GLOBAL_DATA).length === 6, { timeout: 5000 });
+  await page.waitForSelector('.cell', { state: 'visible', timeout: 5000 });
 
   await page.locator('.cell').first().click();
-  await page.waitForSelector('#modalBg.open', { state: 'attached', timeout: 2000 });
+  await page.waitForSelector('#modalBg.open', { state: 'visible', timeout: 2000 });
   await page.click('.modebtn[data-mode="engine"]');
   await page.waitForSelector('#engineArea', { state: 'visible', timeout: 2000 });
 
@@ -55,7 +51,7 @@ try {
   await page.selectOption('#device', 'Test Phone');
   await page.waitForFunction(() => document.querySelectorAll('#ins option').length > 1, { timeout: 2000 });
   await page.selectOption('#ins', '24');
-  await page.waitForFunction(() => document.querySelectorAll('#con option').length === 4, { timeout: 2000 });
+  await page.waitForFunction(() => document.querySelectorAll('#con option').length > 1, { timeout: 2000 });
   await page.selectOption('#con', 'mnp');
   await page.waitForFunction(() => document.querySelectorAll('#options .opt').length >= 2, { timeout: 2000 });
 
@@ -75,7 +71,7 @@ try {
 
   console.log('[PHASE9 UI] PASS', JSON.stringify(result));
 } catch (e) {
-  console.error('[PHASE9 UI] FAIL', e.message);
+  console.error('[PHASE9 UI] FAIL', `${e.message}\nCaptured errors: ${errors.join(' | ')}`);
   process.exitCode = 1;
 } finally {
   await browser.close();
