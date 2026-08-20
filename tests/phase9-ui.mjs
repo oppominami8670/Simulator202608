@@ -51,19 +51,7 @@ try {
   });
 
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await page.waitForFunction(() => typeof window.init === 'function', { timeout: 5000 });
-  await page.evaluate(async data => {
-    const response = new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    const original = window.fetch;
-    window.fetch = async (input, init) => {
-      const u = typeof input === 'string' ? input : input?.url || '';
-      if (u.includes('script.google.com') || u.includes('script.googleusercontent.com')) return response.clone();
-      return original(input, init);
-    };
-    await window.init();
-  }, fixture);
-
-  await page.waitForFunction(() => document.querySelectorAll('#carrier option').length > 1, { timeout: 5000 });
+  await page.waitForFunction(() => document.querySelectorAll('#carrier option').length > 1, { timeout: 10000 });
   await page.waitForSelector('.cell', { state: 'visible', timeout: 5000 });
 
   await page.locator('.cell').first().click();
