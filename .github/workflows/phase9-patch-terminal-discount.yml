@@ -1,0 +1,50 @@
+name: Phase9 terminal discount patch
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore: patch phase9 terminal discount') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch Phase9
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('phase9-ui-prototype.html')
+          s = p.read_text(encoding='utf-8')
+          replacements = [
+            ('.table{width:100%;border-collapse:collapse;min-width:1050px}', '.table{width:100%;border-collapse:collapse;min-width:1050px;table-layout:fixed}.table th:first-child,.table td:first-child{width:120px}'),
+            ("const DEVICE_TYPES=['Android','iPhone','SIMのみ'];", "const DEVICE_TYPES=['Android','iPhone','SIMのみ'];const DEVICE_DISCOUNT_CARRIERS=['docomo','au','softbank','SoftBank','UQ','Y!mobile'];"),
+            ("function newLine(){return{carrier:'',plan:'',data:'',division:'',deviceType:'',device:'',installment:'',warranty:false,options:[],appliedDiscounts:[],monthly:0}}", "function newLine(){return{carrier:'',plan:'',data:'',division:'',deviceType:'',device:'',installment:'',warranty:false,options:[],appliedDiscounts:[],deviceDiscount:0,monthly:0}}"),
+            ("function warrantyPrice(s){const r=selectedDeviceRow(s);return r?num(r[6]):0}", "function warrantyPrice(s){const r=selectedDeviceRow(s);return r?num(r[6]):0}function deviceDiscountEligible(c){return DEVICE_DISCOUNT_CARRIERS.includes(c)||norm(c).toLowerCase()==='softbank'}"),
+            ("function deviceMonthly(s){const r=selectedDeviceRow(s);return r?num(r[4]):0}", "function deviceMonthly(s){const r=selectedDeviceRow(s),base=r?num(r[4]):0;const monthlyDiscount=Math.floor(num(s.deviceDiscount)/24);return Math.max(0,base-monthlyDiscount)}"),
+            ("<td rowspan=\"11\" class=\"money\">${money(proposalTotal(p))}</td>", "<td rowspan=\"12\" class=\"money\">${money(proposalTotal(p))}</td>"),
+            ("<tr><td class=\"label\">適用割引（最大5つ）</td>${p.lines.map((s,j)=>`<td>${discountUI(s,pi,j)}</td>`).join('')}<td class=\"sub\">固定回線割引は上記オプション</td></tr>\n<tr><td class=\"label\">月額</td>${p.lines.map((s,j)=>`<td class=\"money\">${money(s.monthly)}</td>`).join('')}<td class=\"money\">${money(p.fixed.monthly)}</td></tr>", "<tr><td class=\"label\">適用割引（最大5つ）</td>${p.lines.map((s,j)=>`<td>${discountUI(s,pi,j)}</td>`).join('')}<td class=\"sub\">固定回線割引は上記オプション</td></tr>\n<tr><td class=\"label\">端末値引き</td>${p.lines.map((s,j)=>`<td>${deviceDiscountEligible(s.carrier)?`<input type=\"number\" min=\"0\" class=\"input p-device-discount\" data-p=\"${pi}\" data-j=\"${j}\" value=\"${num(s.deviceDiscount)||''}\" placeholder=\"端末値引き総額を入力\">`:'<span class=\"sub\">—</span>'}</td>`).join('')}<td class=\"sub\">—</td></tr>\n<tr><td class=\"label\">月額</td>${p.lines.map((s,j)=>`<td class=\"money p-monthly\" data-p=\"${pi}\" data-j=\"${j}\">${money(s.monthly)}</td>`).join('')}<td class=\"money\">${money(p.fixed.monthly)}</td></tr>"),
+            ("s.carrier=e.value;s.plan=s.data=s.division=s.deviceType=s.device=s.installment='';s.warranty=false;s.options=[];s.appliedDiscounts=[];s.monthly=0;", "s.carrier=e.value;s.plan=s.data=s.division=s.deviceType=s.device=s.installment='';s.warranty=false;s.options=[];s.appliedDiscounts=[];s.deviceDiscount=0;s.monthly=0;"),
+            ("s.division=e.value;s.deviceType=s.device=s.installment='';s.warranty=false;s.options=[];calcLine(s);", "s.division=e.value;s.deviceType=s.device=s.installment='';s.warranty=false;s.options=[];s.deviceDiscount=0;calcLine(s);"),
+            ("s.deviceType=e.value;s.device=s.installment='';s.warranty=false;s.options=[];calcLine(s);", "s.deviceType=e.value;s.device=s.installment='';s.warranty=false;s.options=[];s.deviceDiscount=0;calcLine(s);"),
+            ("s.device=e.value;s.installment='';s.warranty=false;s.options=[];calcLine(s);", "s.device=e.value;s.installment='';s.warranty=false;s.options=[];s.deviceDiscount=0;calcLine(s);"),
+            ("s.installment=e.value;s.warranty=false;calcLine(s);", "s.installment=e.value;s.warranty=false;s.deviceDiscount=0;calcLine(s);"),
+            ("document.querySelectorAll('.p-fix-carrier').forEach(e=>e.onchange=", "document.querySelectorAll('.p-device-discount').forEach(e=>e.oninput=()=>{const s=proposals[+e.dataset.p].lines[+e.dataset.j];s.deviceDiscount=Math.max(0,num(e.value));calcLine(s);const cell=document.querySelector(`.p-monthly[data-p=\"${e.dataset.p}\"][data-j=\"${e.dataset.j}\"]`);if(cell)cell.textContent=money(s.monthly);renderCompare()});\ndocument.querySelectorAll('.p-fix-carrier').forEach(e=>e.onchange=")
+          ]
+          for old, new in replacements:
+              if old not in s:
+                  raise SystemExit(f'Missing expected pattern: {old[:100]}')
+              s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add phase9-ui-prototype.html
+          git diff --cached --quiet && exit 0
+          git commit -m "chore: patch phase9 terminal discount"
+          git push
