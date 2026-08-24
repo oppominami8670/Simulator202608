@@ -48,3 +48,4 @@ jobs:
           git diff --cached --quiet && exit 0
           git commit -m "chore: patch phase9 terminal discount"
           git push
+# trigger
