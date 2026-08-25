@@ -142,5 +142,24 @@ async function loadGAS(){try{const r=await fetch(GAS_URL,{redirect:'follow'});if
 renderCurrent();loadGAS();
 </script>
 <script>document.addEventListener('DOMContentLoaded',()=>{const stage=document.getElementById('stage'),screen=document.getElementById('loading-screen');if(!stage||!screen)return;const items=['📷','🚗','📺','🗺️','✏️','📓','🎨','🎧','🎮','💡'],radius=140;items.forEach((emoji,index)=>{const el=document.createElement('div');el.className='suck-item';el.textContent=emoji;const angle=index/items.length*Math.PI*2+(Math.random()*.2),distance=radius+(Math.random()*30-15);el.style.setProperty('--tx',`${Math.cos(angle)*distance}px`);el.style.setProperty('--ty',`${Math.sin(angle)*distance}px`);el.style.animationDelay=`${index*.15%1.5}s`;stage.appendChild(el)});const hide=()=>setTimeout(()=>screen.classList.add('is-loaded'),500);if(document.readyState==='complete')hide();else window.addEventListener('load',hide,{once:true})});</script>
+<!-- PHASE9_GAS_LOADER_HOLD -->
+<script>
+(() => {
+  const screen = document.getElementById('loading-screen');
+  if (!screen) return;
+  const ready = () => window.GLOBAL_DATA !== null && typeof window.GLOBAL_DATA !== 'undefined';
+  const guard = new MutationObserver(() => {
+    if (screen.classList.contains('is-loaded') && !ready()) screen.classList.remove('is-loaded');
+  });
+  guard.observe(screen, { attributes: true, attributeFilter: ['class'] });
+  const timer = setInterval(() => {
+    if (ready()) {
+      clearInterval(timer);
+      setTimeout(() => screen.classList.add('is-loaded'), 350);
+      guard.disconnect();
+    }
+  }, 50);
+})();
+</script>
 </body>
 </html>
