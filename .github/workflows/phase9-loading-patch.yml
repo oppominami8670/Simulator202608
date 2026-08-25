@@ -1,0 +1,37 @@
+name: Phase9 loading patch
+on:
+  push:
+    paths:
+      - '.github/workflows/phase9-loading-patch.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Patch loading screen
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('phase9-ui-prototype.html')
+          s=p.read_text(encoding='utf-8')
+          css='''\n#loading-screen{position:fixed;inset:0;width:100vw;height:100vh;background:#0f172a;display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:9999;overflow:hidden;transition:opacity .8s ease,visibility .8s ease}#loading-screen.is-loaded{opacity:0;visibility:hidden;pointer-events:none}.suck-in-stage{position:relative;width:320px;height:320px;display:flex;justify-content:center;align-items:center}.phone-center{font-size:80px;z-index:10;filter:drop-shadow(0 0 15px rgba(59,130,246,.5));animation:phase9Pulse 1.5s ease-in-out infinite alternate}@keyframes phase9Pulse{from{transform:scale(1)}to{transform:scale(1.08)}}.suck-item{position:absolute;font-size:36px;opacity:0;pointer-events:none;animation:phase9Suck 1.8s cubic-bezier(.55,.055,.675,.19) infinite}@keyframes phase9Suck{0%{transform:translate(var(--tx),var(--ty)) scale(1.2) rotate(0);opacity:0}20%{opacity:1}85%{opacity:.9}100%{transform:translate(0,0) scale(0) rotate(360deg);opacity:0}}.loading-text{margin-top:20px;color:#94a3b8;font-size:14px;letter-spacing:.1em;text-transform:uppercase}\n'''
+          marker='</style>'
+          if '#loading-screen{' not in s:
+              s=s.replace(marker,css+marker,1)
+          overlay='''<div id="loading-screen" aria-label="読み込み中"><div class="suck-in-stage" id="stage"><div class="phone-center">📱</div></div><div class="loading-text">Loading...</div></div>\n'''
+          s=s.replace('<body>','<body>\n'+overlay,1)
+          script='''<script>document.addEventListener('DOMContentLoaded',()=>{const stage=document.getElementById('stage'),screen=document.getElementById('loading-screen');if(!stage||!screen)return;const items=['📷','🚗','📺','🗺️','✏️','📓','🎨','🎧','🎮','💡'],radius=140;items.forEach((emoji,index)=>{const el=document.createElement('div');el.className='suck-item';el.textContent=emoji;const angle=index/items.length*Math.PI*2+(Math.random()*.2),distance=radius+(Math.random()*30-15);el.style.setProperty('--tx',`${Math.cos(angle)*distance}px`);el.style.setProperty('--ty',`${Math.sin(angle)*distance}px`);el.style.animationDelay=`${index*.15%1.5}s`;stage.appendChild(el)});const hide=()=>setTimeout(()=>screen.classList.add('is-loaded'),500);if(document.readyState==='complete')hide();else window.addEventListener('load',hide,{once:true})});</script>\n'''
+          s=s.replace('</body>',script+'</body>',1)
+          p.write_text(s,encoding='utf-8')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add phase9-ui-prototype.html
+          git diff --cached --check
+          git commit -m 'feat: add smartphone suck-in loading screen'
+          git push origin main
