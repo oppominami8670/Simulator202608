@@ -1,0 +1,26 @@
+name: temp-light-loader
+on: push
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.event.head_commit.message != 'chore: set light loading background'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('phase9-ui-prototype.html')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace('background:#0f172a;display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:9999','background:#f8fafc;display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:9999',1)
+          s=s.replace('color:#94a3b8;font-size:14px;letter-spacing:.1em;text-transform:uppercase','color:#475569;font-size:14px;letter-spacing:.1em;text-transform:uppercase',1)
+          p.write_text(s,encoding='utf-8')
+          PY
+          rm -f .github/workflows/temp-light-loader.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add phase9-ui-prototype.html .github/workflows/temp-light-loader.yml
+          git commit -m 'chore: set light loading background'
+          git push
