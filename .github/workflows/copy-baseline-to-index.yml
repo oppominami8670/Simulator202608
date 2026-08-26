@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Copy Phase9 to index
+      - name: Copy Phase9 baseline to index
         run: cp phase9-ui-prototype.html index.html
       - name: Commit index
         run: |
@@ -19,3 +19,4 @@ jobs:
           git add index.html
           git diff --cached --quiet || git commit -m 'sync: baseline phase9 to index'
           git push
+# trigger sync
