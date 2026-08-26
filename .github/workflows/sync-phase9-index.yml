@@ -1,0 +1,21 @@
+name: Sync Phase9 to index
+on:
+  push:
+    branches: [main]
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, 'sync: phase9 to index')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Copy Phase9 to index
+        run: cp phase9-ui-prototype.html index.html
+      - name: Commit index
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git diff --cached --quiet || git commit -m 'sync: phase9 to index'
+          git push
